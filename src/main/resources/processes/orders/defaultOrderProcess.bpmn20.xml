@@ -1,0 +1,317 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:flowable="http://flowable.org/bpmn" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:omgdc="http://www.omg.org/spec/DD/20100524/DC" xmlns:omgdi="http://www.omg.org/spec/DD/20100524/DI" typeLanguage="http://www.w3.org/2001/XMLSchema" expressionLanguage="http://www.w3.org/1999/XPath" targetNamespace="orders">
+    <signal id="retry" name="retry" flowable:scope="global"></signal>
+    <signal id="cancel" name="cancel" flowable:scope="global"></signal>
+    <signal id="skip" name="skip" flowable:scope="global"></signal>
+    <process id="defaultOrderProcess" name="Default order process" isExecutable="true">
+        <startEvent id="startDefaultOrder" name="Start default order"></startEvent>
+        <serviceTask id="markInProvisioning" name="Mark in provisioning" flowable:async="true" flowable:expression="#{orderWorkflowService.markWfInProvisioning(execution)}"></serviceTask>
+        <subProcess id="subprocess1" name="Provisioning">
+            <startEvent id="startDefaultProvisioning" name="Start default provisioning" flowable:async="true"></startEvent>
+            <serviceTask id="firstLevelProvisioning" name="1st Level Provisioning" flowable:async="true" flowable:expression="#{orderWorkflowService.processWfLevelOne(execution)}"></serviceTask>
+            <exclusiveGateway id="exclusiveGatewayFirstLevel" name="Exclusive Gateway: check provStatus after 1st level" default="flow7"></exclusiveGateway>
+            <endEvent id="errorEndProvisioning" name="Error end provisioning">
+                <errorEventDefinition errorRef="provisioningError"></errorEventDefinition>
+            </endEvent>
+            <serviceTask id="secondLevelProvisioning" name="2nd Level Provisioning" flowable:async="true" flowable:expression="#{orderWorkflowService.processWfLevelTwo(execution)}"></serviceTask>
+            <exclusiveGateway id="exclusiveGatewaySecondLevel" name="Exclusive Gateway:  check provStatus after 2nd level" default="flow10"></exclusiveGateway>
+            <serviceTask id="undoFirstLevelProvisioning" name="Undo 1st level provisioning" flowable:async="true" flowable:expression="#{orderWorkflowService.undoProcessWfLevelOne(execution)}"></serviceTask>
+            <serviceTask id="internalProvisioning" name="CRM provisioning" flowable:async="true" flowable:expression="#{orderWorkflowService.processWfOrderInternal(execution)}"></serviceTask>
+            <exclusiveGateway id="exclusiveGatewayInternal" name="Exclusive Gateway:  check provStatus after internal" default="flow14"></exclusiveGateway>
+            <serviceTask id="undoSecondLevelProvisioning" name="Undo 2nd level provisioning" flowable:async="true" flowable:expression="#{orderWorkflowService.undoProcessWfLevelTwo(execution)}"></serviceTask>
+            <endEvent id="endDefaultProvisioning" name="End default provisioning"></endEvent>
+            <sequenceFlow id="flow5" sourceRef="startDefaultProvisioning" targetRef="firstLevelProvisioning"></sequenceFlow>
+            <sequenceFlow id="flow6" sourceRef="firstLevelProvisioning" targetRef="exclusiveGatewayFirstLevel"></sequenceFlow>
+            <sequenceFlow id="flow7" name="ERROR 1st level" sourceRef="exclusiveGatewayFirstLevel" targetRef="errorEndProvisioning"></sequenceFlow>
+            <sequenceFlow id="flow8" name="OK 1st level" sourceRef="exclusiveGatewayFirstLevel" targetRef="secondLevelProvisioning">
+                <conditionExpression xsi:type="tFormalExpression"><![CDATA[${provStatus =='OK'}]]></conditionExpression>
+            </sequenceFlow>
+            <sequenceFlow id="flow9" sourceRef="secondLevelProvisioning" targetRef="exclusiveGatewaySecondLevel"></sequenceFlow>
+            <sequenceFlow id="flow10" name="ERROR 2nd level" sourceRef="exclusiveGatewaySecondLevel" targetRef="undoFirstLevelProvisioning"></sequenceFlow>
+            <sequenceFlow id="flow11" sourceRef="undoFirstLevelProvisioning" targetRef="errorEndProvisioning"></sequenceFlow>
+            <sequenceFlow id="flow12" name="OK 2nd level" sourceRef="exclusiveGatewaySecondLevel" targetRef="internalProvisioning">
+                <conditionExpression xsi:type="tFormalExpression"><![CDATA[${provStatus =='OK'}]]></conditionExpression>
+            </sequenceFlow>
+            <sequenceFlow id="flow13" sourceRef="internalProvisioning" targetRef="exclusiveGatewayInternal"></sequenceFlow>
+            <sequenceFlow id="flow14" name="ERROR CRM provisioning" sourceRef="exclusiveGatewayInternal" targetRef="undoSecondLevelProvisioning"></sequenceFlow>
+            <sequenceFlow id="flow15" sourceRef="undoSecondLevelProvisioning" targetRef="undoFirstLevelProvisioning"></sequenceFlow>
+            <sequenceFlow id="flow16" name="OK CRM provisioning" sourceRef="exclusiveGatewayInternal" targetRef="endDefaultProvisioning">
+                <conditionExpression xsi:type="tFormalExpression"><![CDATA[${provStatus =='OK'}]]></conditionExpression>
+            </sequenceFlow>
+        </subProcess>
+        <sequenceFlow id="flow4" sourceRef="markInProvisioning" targetRef="subprocess1"></sequenceFlow>
+        <serviceTask id="markActive" name="Mark active" flowable:async="true" flowable:expression="#{orderWorkflowService.markWfActive(execution)}"></serviceTask>
+        <sequenceFlow id="flow17" sourceRef="subprocess1" targetRef="markActive"></sequenceFlow>
+        <endEvent id="endActiveDefaultOrder" name="End Active default order"></endEvent>
+        <sequenceFlow id="flow18" sourceRef="markActive" targetRef="endActiveDefaultOrder"></sequenceFlow>
+        <serviceTask id="markInError" name="Mark in error" flowable:async="true" flowable:expression="#{orderWorkflowService.markWfInError(execution)}"></serviceTask>
+        <sequenceFlow id="flow20" sourceRef="boundaryErrorProvisioning" targetRef="markInError"></sequenceFlow>
+        <userTask id="errorReview" name="Error review" flowable:candidateGroups="ADMIN,BO_ACTIVATION,BO_TEHNICAL"></userTask>
+        <sequenceFlow id="flow21" sourceRef="markInError" targetRef="errorReview"></sequenceFlow>
+        <exclusiveGateway id="exclusivegateway4" name="Exclusive Gateway" default="flow26"></exclusiveGateway>
+        <serviceTask id="markCancel" name="Mark Cancel" flowable:async="true" flowable:expression="#{orderWorkflowService.markWfCancel(execution)}"></serviceTask>
+        <endEvent id="endCancelDefaultOrder" name="End default order - Cancel"></endEvent>
+        <sequenceFlow id="flow39" sourceRef="markCancel" targetRef="endCancelDefaultOrder"></sequenceFlow>
+        <serviceTask id="linkOrder" name="Link order with process instance" flowable:async="true" flowable:expression="#{orderWorkflowService.setOrderProcess(execution)}"></serviceTask>
+        <sequenceFlow id="flow44" sourceRef="linkOrder" targetRef="setProvisioningUser"></sequenceFlow>
+        <exclusiveGateway id="exclusivegateway5" name="Exclusive Gateway: is order process set" default="continueProcess"></exclusiveGateway>
+        <sequenceFlow id="continueProcess" sourceRef="exclusivegateway5" targetRef="linkOrder"></sequenceFlow>
+        <endEvent id="endProcessOrder" name="End - order process already set"></endEvent>
+        <sequenceFlow id="flow48" sourceRef="startDefaultOrder" targetRef="exclusivegateway5"></sequenceFlow>
+        <sequenceFlow id="flow26" sourceRef="exclusivegateway4" targetRef="markInProvisioning"></sequenceFlow>
+        <sequenceFlow id="retryL1" name="Retry" sourceRef="sid-407019CE-994C-4EC2-80A3-D04638D75655" targetRef="markInProvisioning"></sequenceFlow>
+        <sequenceFlow id="cancelL1" name="Cancel" sourceRef="sid-51271E7A-233B-4BFC-BCAD-11C5DFE23C2C" targetRef="markCancel"></sequenceFlow>
+        <userTask id="sid-60371C25-09F7-45C6-9A95-051F38722D2C" name="Scheduled"></userTask>
+        <sequenceFlow id="flow2" name="Scheduled in the future" sourceRef="exclusivegateway4" targetRef="sid-60371C25-09F7-45C6-9A95-051F38722D2C">
+            <conditionExpression xsi:type="tFormalExpression"><![CDATA[${orderWorkflowService.isScheduledInFuture(execution) == true}]]></conditionExpression>
+        </sequenceFlow>
+        <sequenceFlow id="sid-33C21E70-82D1-4CD2-84E9-07FB5AF3E94D" name="cancel" sourceRef="sid-1E0918A0-51D7-4D17-AA5F-6FE134D6CD73" targetRef="markCancel"></sequenceFlow>
+        <sequenceFlow id="sid-3721A0E5-2F80-4466-8ACA-E551C7FD13C5" name="skip" sourceRef="sid-83385D89-C49E-4610-9D7A-1FAFDAB71E28" targetRef="markInProvisioning"></sequenceFlow>
+        <sequenceFlow id="flow3" sourceRef="sid-AD8FF1DC-C8DB-4166-953B-315AF6B0578A" targetRef="markInProvisioning"></sequenceFlow>
+        <serviceTask id="setProvisioningUser" name="Set provisioning user" flowable:async="true" flowable:expression="#{orderWorkflowService.setProvisioningUser(execution)}"></serviceTask>
+        <sequenceFlow id="sid-0B93A83E-89BC-424B-9A4A-8C3DB3269487" sourceRef="setProvisioningUser" targetRef="exclusivegateway4"></sequenceFlow>
+        <sequenceFlow id="endProcess" name="Order process is already set" sourceRef="exclusivegateway5" targetRef="endProcessOrder">
+            <conditionExpression xsi:type="tFormalExpression"><![CDATA[${orderWorkflowService.isOrderProcessSet(execution) == true}]]></conditionExpression>
+        </sequenceFlow>
+        <boundaryEvent id="sid-AD8FF1DC-C8DB-4166-953B-315AF6B0578A" attachedToRef="sid-60371C25-09F7-45C6-9A95-051F38722D2C" cancelActivity="true">
+            <timerEventDefinition>
+                <timeDate>${orderWorkflowService.getScheduledDate(execution)}</timeDate>
+            </timerEventDefinition>
+        </boundaryEvent>
+        <boundaryEvent id="sid-83385D89-C49E-4610-9D7A-1FAFDAB71E28" attachedToRef="sid-60371C25-09F7-45C6-9A95-051F38722D2C" cancelActivity="true">
+            <signalEventDefinition signalRef="skip"></signalEventDefinition>
+        </boundaryEvent>
+        <boundaryEvent id="sid-51271E7A-233B-4BFC-BCAD-11C5DFE23C2C" name="Cancel" attachedToRef="errorReview" cancelActivity="true">
+            <signalEventDefinition signalRef="cancel"></signalEventDefinition>
+        </boundaryEvent>
+        <boundaryEvent id="sid-1E0918A0-51D7-4D17-AA5F-6FE134D6CD73" attachedToRef="sid-60371C25-09F7-45C6-9A95-051F38722D2C" cancelActivity="true">
+            <signalEventDefinition signalRef="cancel"></signalEventDefinition>
+        </boundaryEvent>
+        <boundaryEvent id="sid-407019CE-994C-4EC2-80A3-D04638D75655" name="Retry" attachedToRef="errorReview" cancelActivity="true">
+            <signalEventDefinition signalRef="retry"></signalEventDefinition>
+        </boundaryEvent>
+        <boundaryEvent id="boundaryErrorProvisioning" name="Boundary error provisioning" attachedToRef="subprocess1">
+            <errorEventDefinition></errorEventDefinition>
+        </boundaryEvent>
+    </process>
+    <bpmndi:BPMNDiagram id="BPMNDiagram_defaultOrderProcess">
+        <bpmndi:BPMNPlane bpmnElement="defaultOrderProcess" id="BPMNPlane_defaultOrderProcess">
+            <bpmndi:BPMNShape bpmnElement="startDefaultOrder" id="BPMNShape_startDefaultOrder">
+                <omgdc:Bounds height="30.0" width="30.0" x="1.0" y="343.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="markInProvisioning" id="BPMNShape_markInProvisioning">
+                <omgdc:Bounds height="55.0" width="105.0" x="654.0" y="330.5"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="subprocess1" id="BPMNShape_subprocess1">
+                <omgdc:Bounds height="281.0" width="1021.0" x="196.0" y="481.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="startDefaultProvisioning" id="BPMNShape_startDefaultProvisioning">
+                <omgdc:Bounds height="30.0" width="30.0" x="226.0" y="681.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="firstLevelProvisioning" id="BPMNShape_firstLevelProvisioning">
+                <omgdc:Bounds height="60.0" width="111.0" x="306.0" y="669.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="exclusiveGatewayFirstLevel" id="BPMNShape_exclusiveGatewayFirstLevel">
+                <omgdc:Bounds height="40.0" width="40.0" x="466.0" y="680.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="errorEndProvisioning" id="BPMNShape_errorEndProvisioning">
+                <omgdc:Bounds height="28.0" width="28.0" x="472.0" y="534.5"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="secondLevelProvisioning" id="BPMNShape_secondLevelProvisioning">
+                <omgdc:Bounds height="67.0" width="105.0" x="596.0" y="665.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="exclusiveGatewaySecondLevel" id="BPMNShape_exclusiveGatewaySecondLevel">
+                <omgdc:Bounds height="40.0" width="40.0" x="736.0" y="680.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="undoFirstLevelProvisioning" id="BPMNShape_undoFirstLevelProvisioning">
+                <omgdc:Bounds height="68.0" width="105.0" x="704.0" y="515.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="internalProvisioning" id="BPMNShape_internalProvisioning">
+                <omgdc:Bounds height="55.0" width="105.0" x="856.0" y="673.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="exclusiveGatewayInternal" id="BPMNShape_exclusiveGatewayInternal">
+                <omgdc:Bounds height="40.0" width="40.0" x="1006.0" y="681.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="undoSecondLevelProvisioning" id="BPMNShape_undoSecondLevelProvisioning">
+                <omgdc:Bounds height="61.0" width="105.0" x="974.0" y="518.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="endDefaultProvisioning" id="BPMNShape_endDefaultProvisioning">
+                <omgdc:Bounds height="28.0" width="28.0" x="1146.0" y="684.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="markActive" id="BPMNShape_markActive">
+                <omgdc:Bounds height="55.0" width="105.0" x="654.0" y="811.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="endActiveDefaultOrder" id="BPMNShape_endActiveDefaultOrder">
+                <omgdc:Bounds height="28.0" width="28.0" x="692.5" y="915.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="markInError" id="BPMNShape_markInError">
+                <omgdc:Bounds height="55.0" width="105.0" x="1130.628487578403" y="330.5"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="errorReview" id="BPMNShape_errorReview">
+                <omgdc:Bounds height="70.0" width="126.0" x="870.0" y="323.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="exclusivegateway4" id="BPMNShape_exclusivegateway4">
+                <omgdc:Bounds height="40.0" width="40.0" x="565.0" y="340.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="markCancel" id="BPMNShape_markCancel">
+                <omgdc:Bounds height="55.0" width="105.0" x="880.5" y="128.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="endCancelDefaultOrder" id="BPMNShape_endCancelDefaultOrder">
+                <omgdc:Bounds height="28.0" width="28.0" x="1193.5" y="141.5"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="linkOrder" id="BPMNShape_linkOrder">
+                <omgdc:Bounds height="60.0" width="107.0" x="210.0" y="330.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="exclusivegateway5" id="BPMNShape_exclusivegateway5">
+                <omgdc:Bounds height="40.0" width="40.0" x="60.0" y="340.0"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="endProcessOrder" id="BPMNShape_endProcessOrder">
+                <omgdc:Bounds height="28.0" width="28.0" x="66.0" y="141.5"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="sid-60371C25-09F7-45C6-9A95-051F38722D2C" id="BPMNShape_sid-60371C25-09F7-45C6-9A95-051F38722D2C">
+                <omgdc:Bounds height="70.0" width="150.0" x="510.0" y="120.5"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="setProvisioningUser" id="BPMNShape_setProvisioningUser">
+                <omgdc:Bounds height="55.0" width="105.0" x="405.0" y="332.5"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="sid-AD8FF1DC-C8DB-4166-953B-315AF6B0578A" id="BPMNShape_sid-AD8FF1DC-C8DB-4166-953B-315AF6B0578A">
+                <omgdc:Bounds height="31.0" width="31.0" x="598.067262426007" y="175.61821957285702"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="sid-83385D89-C49E-4610-9D7A-1FAFDAB71E28" id="BPMNShape_sid-83385D89-C49E-4610-9D7A-1FAFDAB71E28">
+                <omgdc:Bounds height="30.0" width="30.0" x="634.0072021934647" y="175.55262352468918"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="sid-51271E7A-233B-4BFC-BCAD-11C5DFE23C2C" id="BPMNShape_sid-51271E7A-233B-4BFC-BCAD-11C5DFE23C2C">
+                <omgdc:Bounds height="30.0" width="30.0" x="921.5702900656985" y="307.2368774264994"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="sid-1E0918A0-51D7-4D17-AA5F-6FE134D6CD73" id="BPMNShape_sid-1E0918A0-51D7-4D17-AA5F-6FE134D6CD73">
+                <omgdc:Bounds height="30.0" width="30.0" x="645.5185415183155" y="140.34934753000528"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="sid-407019CE-994C-4EC2-80A3-D04638D75655" id="BPMNShape_sid-407019CE-994C-4EC2-80A3-D04638D75655">
+                <omgdc:Bounds height="30.0" width="30.0" x="854.5098679750572" y="341.1976304288419"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNShape bpmnElement="boundaryErrorProvisioning" id="BPMNShape_boundaryErrorProvisioning">
+                <omgdc:Bounds height="30.0" width="30.0" x="1198.4036529355496" y="465.80365884245083"></omgdc:Bounds>
+            </bpmndi:BPMNShape>
+            <bpmndi:BPMNEdge bpmnElement="flow48" id="BPMNEdge_flow48">
+                <omgdi:waypoint x="30.942495282643087" y="358.46696405875"></omgdi:waypoint>
+                <omgdi:waypoint x="60.57337367624808" y="359.39393939393943"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow26" id="BPMNEdge_flow26">
+                <omgdi:waypoint x="604.626923076923" y="359.6761133603239"></omgdi:waypoint>
+                <omgdi:waypoint x="653.9999999999997" y="358.86337448559664"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="continueProcess" id="BPMNEdge_continueProcess">
+                <omgdi:waypoint x="99.94456699326749" y="360.0"></omgdi:waypoint>
+                <omgdi:waypoint x="209.99999999992178" y="360.0"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="endProcess" id="BPMNEdge_endProcess">
+                <omgdi:waypoint x="80.0" y="340.0"></omgdi:waypoint>
+                <omgdi:waypoint x="80.0" y="169.44992381440522"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow2" id="BPMNEdge_flow2">
+                <omgdi:waypoint x="585.0" y="340.0"></omgdi:waypoint>
+                <omgdi:waypoint x="585.0" y="190.45"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow3" id="BPMNEdge_flow3">
+                <omgdi:waypoint x="621.0854383799523" y="204.61804461837374"></omgdi:waypoint>
+                <omgdi:waypoint x="691.1858639886063" y="330.5"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow4" id="BPMNEdge_flow4">
+                <omgdi:waypoint x="706.5" y="385.45"></omgdi:waypoint>
+                <omgdi:waypoint x="706.5" y="481.0"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow5" id="BPMNEdge_flow5">
+                <omgdi:waypoint x="255.94531131547149" y="696.3720866073053"></omgdi:waypoint>
+                <omgdi:waypoint x="305.99999999999534" y="697.6182572614108"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow6" id="BPMNEdge_flow6">
+                <omgdi:waypoint x="416.94999999999317" y="699.4453815261045"></omgdi:waypoint>
+                <omgdi:waypoint x="466.11803343949043" y="699.8406374501992"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow20" id="BPMNEdge_flow20">
+                <omgdi:waypoint x="1209.8123159052718" y="466.2352802462847"></omgdi:waypoint>
+                <omgdi:waypoint x="1189.8958208719482" y="385.45"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow7" id="BPMNEdge_flow7">
+                <omgdi:waypoint x="486.0" y="680.0"></omgdi:waypoint>
+                <omgdi:waypoint x="486.0" y="562.4499276550274"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow21" id="BPMNEdge_flow21">
+                <omgdi:waypoint x="1130.6284875783927" y="358.0"></omgdi:waypoint>
+                <omgdi:waypoint x="995.9499999998734" y="358.0"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow8" id="BPMNEdge_flow8">
+                <omgdi:waypoint x="505.7675304878048" y="699.8170731707318"></omgdi:waypoint>
+                <omgdi:waypoint x="596.0" y="698.9841538461538"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow44" id="BPMNEdge_flow44">
+                <omgdi:waypoint x="316.94999999995406" y="360.0"></omgdi:waypoint>
+                <omgdi:waypoint x="404.9999999999599" y="360.0"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow9" id="BPMNEdge_flow9">
+                <omgdi:waypoint x="700.9499999999942" y="699.2318604651163"></omgdi:waypoint>
+                <omgdi:waypoint x="736.2355637030247" y="699.7247706422019"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="sid-0B93A83E-89BC-424B-9A4A-8C3DB3269487" id="BPMNEdge_sid-0B93A83E-89BC-424B-9A4A-8C3DB3269487">
+                <omgdi:waypoint x="509.95000000000005" y="360.0"></omgdi:waypoint>
+                <omgdi:waypoint x="565.0" y="360.0"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow17" id="BPMNEdge_flow17">
+                <omgdi:waypoint x="706.5" y="761.95"></omgdi:waypoint>
+                <omgdi:waypoint x="706.5" y="811.0"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow39" id="BPMNEdge_flow39">
+                <omgdi:waypoint x="985.4499999999999" y="155.5"></omgdi:waypoint>
+                <omgdi:waypoint x="1193.5" y="155.5"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow18" id="BPMNEdge_flow18">
+                <omgdi:waypoint x="706.5" y="865.9499999999999"></omgdi:waypoint>
+                <omgdi:waypoint x="706.5" y="915.0"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow13" id="BPMNEdge_flow13">
+                <omgdi:waypoint x="960.9499999999915" y="700.7231914893617"></omgdi:waypoint>
+                <omgdi:waypoint x="1006.0436071126164" y="700.9152542372881"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow14" id="BPMNEdge_flow14">
+                <omgdi:waypoint x="1026.0651960784314" y="681.0653594771242"></omgdi:waypoint>
+                <omgdi:waypoint x="1026.4" y="578.9499999999999"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow15" id="BPMNEdge_flow15">
+                <omgdi:waypoint x="973.9999999999659" y="548.5971296296295"></omgdi:waypoint>
+                <omgdi:waypoint x="808.9499999999999" y="548.9027777777778"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow16" id="BPMNEdge_flow16">
+                <omgdi:waypoint x="1045.5131386861297" y="700.5620437956204"></omgdi:waypoint>
+                <omgdi:waypoint x="1146.0034340333123" y="698.3122368095007"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="retryL1" id="BPMNEdge_retryL1">
+                <omgdi:waypoint x="854.5107636516548" y="356.36292006038883"></omgdi:waypoint>
+                <omgdi:waypoint x="758.9499999999969" y="357.4195173355991"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="sid-3721A0E5-2F80-4466-8ACA-E551C7FD13C5" id="BPMNEdge_sid-3721A0E5-2F80-4466-8ACA-E551C7FD13C5">
+                <omgdi:waypoint x="653.8633882810173" y="204.69538063471725"></omgdi:waypoint>
+                <omgdi:waypoint x="697.057917520357" y="330.5"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="cancelL1" id="BPMNEdge_cancelL1">
+                <omgdi:waypoint x="936.2491370777742" y="307.2401560937559"></omgdi:waypoint>
+                <omgdi:waypoint x="933.5877791632905" y="182.95000000000002"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow10" id="BPMNEdge_flow10">
+                <omgdi:waypoint x="756.0658415841584" y="680.0660066006601"></omgdi:waypoint>
+                <omgdi:waypoint x="756.3874172185431" y="582.9499999999999"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow11" id="BPMNEdge_flow11">
+                <omgdi:waypoint x="703.9999999999852" y="548.9029574861368"></omgdi:waypoint>
+                <omgdi:waypoint x="499.94981236377726" y="548.5257855762025"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="flow12" id="BPMNEdge_flow12">
+                <omgdi:waypoint x="775.8783311561069" y="700.0651960784314"></omgdi:waypoint>
+                <omgdi:waypoint x="855.9999999999912" y="700.327868852459"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+            <bpmndi:BPMNEdge bpmnElement="sid-33C21E70-82D1-4CD2-84E9-07FB5AF3E94D" id="BPMNEdge_sid-33C21E70-82D1-4CD2-84E9-07FB5AF3E94D">
+                <omgdi:waypoint x="675.4685375530246" y="155.3576133313244"></omgdi:waypoint>
+                <omgdi:waypoint x="880.4999999999984" y="155.47097323715607"></omgdi:waypoint>
+            </bpmndi:BPMNEdge>
+        </bpmndi:BPMNPlane>
+    </bpmndi:BPMNDiagram>
+</definitions>
